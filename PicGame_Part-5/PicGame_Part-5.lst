@@ -1,0 +1,292 @@
+gplink-0.13.7 beta
+Copyright (c) 1998-2005 gputils project
+Listing File Generated: 6-24-2017  14:55:33
+ 
+ 
+Address  Value    Disassembly              Source
+-------  -----    -----------              ------
+                                                             LIST     P = P12F629
+                                           
+                                                             INCLUDE  "../P12F629.INC"
+                                                   LIST
+                                           
+                                           ;==========================================================================
+                                           ;  MPASM PIC12F629 processor include
+                                           ; 
+                                           ;  (c) Copyright 1999-2011 Microchip Technology, All rights reserved
+                                           ;==========================================================================
+                                           
+                                                   NOLIST
+                                           
+                                                             __CONFIG _INTRC_OSC_NOCLKOUT & _WDT_OFF & _PWRTE_ON & _MCLRE_OFF & _BOREN_OFF & _CP_ON & _CPD_ON
+                                           
+                                           
+                                           
+                                           ;# PicGame - Microchip PIC Microcontroller Repeat Game
+                                           ;# Copyright (C) 2017 Jason Birch
+                                           ;#
+                                           ;# This program is free software: you can redistribute it and/or modify
+                                           ;# it under the terms of the GNU General Public License as published by
+                                           ;# the Free Software Foundation, either version 3 of the License, or
+                                           ;# (at your option) any later version.
+                                           ;#
+                                           ;# This program is distributed in the hope that it will be useful,
+                                           ;# but WITHOUT ANY WARRANTY; without even the implied warranty of
+                                           ;# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+                                           ;# GNU General Public License for more details.
+                                           ;#
+                                           ;# You should have received a copy of the GNU General Public License
+                                           ;# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+                                           
+                                           
+                                           
+                                           ;/****************************************************************************/
+                                           ;/* PicGame_Part-5 - Microchip PIC Microcontroller Repeat Game               */
+                                           ;/*                  Part 5 - Lighting the LEDs.                             */
+                                           ;/* V1.00 2017-06-28 (C) Jason Birch                                         */
+                                           ;/*                                                                          */
+                                           ;/* PIC Game Programming Series to demonstrate programming a Microchip PIC   */
+                                           ;/* microcontroller. This part in the series covers lighting the LEDs on the */
+                                           ;/* hardware.                                                                */
+                                           ;/****************************************************************************/
+                                           
+                                           
+                                           
+                                           ;/*************/
+                                           ;/* Constants */
+                                           ;/*************/
+                                           SW_LED_1          EQU      GP5                  ; GPIO pin allocated for switch and LED 1.
+                                           SW_LED_2          EQU      GP2                  ; GPIO pin allocated for switch and LED 2.
+                                           SW_LED_3          EQU      GP0                  ; GPIO pin allocated for switch and LED 3.
+                                           SW_LED_4          EQU      GP4                  ; GPIO pin allocated for switch and LED 4.
+                                           
+                                           SPEAKER           EQU      GP1                  ; GPIO pin allocated for speaker.
+                                           
+                                           F_LED_SEQ_PAUSE   EQU      7                    ; Flag an LED sequence will pause, with application pause.
+                                           
+                                           F_RESET_APP       EQU      0                    ; Re-initialise application flag.
+                                           F_PAUSED          EQU      1                    ; Application pausing flag.
+                                           
+                                           
+                                           
+                                           ;/******************/
+                                           ;/* RAM Registers. */
+                                           ;/******************/
+                                           CBLOCK            0x20
+                                                             TEMP1                         ; Temporary register.
+                                                             TEMP2                         ; Temporary register.
+                                           
+                                                             APP_FLAGS                     ; Application flags.
+                                                             LED_STATE                     ; Current LED state.
+                                           
+                                                             LED_SEQ_ADR                   ; LED Sequence pattern address.
+                                                             LED_SEQ_COUNT                 ; LED Sequence pattern count.
+                                           ENDC
+                                           
+                                           
+                                           
+                                                             CODE
+                                           
+                                           ;/**********************************/
+                                           ;/* Reset program location vector. */
+                                           ;/**********************************/
+                                                             ORG      0x0000
+                                           
+000000   3020     movlw	0x20                                 MOVLW    0x20                 ; Clear all RAM values, except random cache.
+000001   0084     movwf	0x4                                  MOVWF    FSR                  ; Set first RAM address.
+000002   3030     movlw	0x30                                 MOVLW    0x30                 ; Clear 48 bytes of RAM.
+000003   2805     goto	0x5                                   GOTO     INIT                 ; Navigate around PIC intrupt vector address.
+                                           
+                                           
+                                           
+                                           ;/*************************************/
+                                           ;/* Interupt program location vector. */
+                                           ;/*************************************/
+                                                             ORG      0x0004
+                                           
+000004   0009     retfie                                     RETFIE
+                                           
+                                           
+                                           
+                                           ;/*******************************/
+                                           ;/* Initialise microcontroller. */
+                                           ;/*******************************/
+000005   2045     call	0x45                INIT              CALL     CLEAR_RAM            ; Clear all RAM values.
+000006   1283     bcf	0x3, 0x5             RESET_INIT        BCF      STATUS, RP0          ; Select Register bank 0
+000007   3007     movlw	0x7                                  MOVLW    0x07                 ; Switch comparitor off.
+000008   0099     movwf	0x19                                 MOVWF    CMCON                ; Comparitor in lowest power mode.
+000009   1683     bsf	0x3, 0x5                               BSF      STATUS, RP0          ; Select Register bank 1
+00000a   0185     clrf	0x5                                   CLRF     TRISIO               ; All LED GPIO as an output.
+00000b   1283     bcf	0x3, 0x5                               BCF      STATUS, RP0          ; Select Register bank 0
+00000c   3035     movlw	0x35                                 MOVLW    (1 << SW_LED_1)|(1 << SW_LED_2)|(1 << SW_LED_3)|(1 << SW_LED_4)
+00000d   0085     movwf	0x5                                  MOVWF    GPIO                 ; Switch all LED GPIO outputs to on.
+                                           
+00000e   201d     call	0x1d                                  CALL     RESET_APP            ; Reset application variables.
+                                           
+                                           
+                                           
+                                           ;/******************************/
+                                           ;/***** TEST HARNESS START *****/
+                                           ;/******************************/
+00000f   14a2     bsf	0x22, 0x1                              BSF      APP_FLAGS, F_PAUSED  ; LED Animations only occur when application is flagged as paused.
+000010   3002     movlw	0x2                                  MOVLW    LED_SEQ_ROT_CLOCK    ; Rotating LED animation to show application is active and waiting.
+000011   2029     call	0x29                                  CALL     SET_LED_ANIM
+000012   202e     call	0x2e                LOOP              CALL     NEXT_LED_ANIM_SEQ    ; Animate to next LED sequence.
+000013   2020     call	0x20                                  CALL     LED_DISPLAY          ; Update LEDs.
+000014   2016     call	0x16                                  CALL     PAUSE
+000015   2812     goto	0x12                                  GOTO     LOOP                 ; Infinite main loop.
+                                           
+                                           
+                                           
+000016   01a1     clrf	0x21                PAUSE             CLRF     TEMP2
+000017   01a0     clrf	0x20                PAUSE_LOOP        CLRF     TEMP1
+000018   0ba0     decfsz	0x20, f           PAUSE_DELAY       DECFSZ   TEMP1
+000019   2818     goto	0x18                                  GOTO     PAUSE_DELAY
+00001a   0ba1     decfsz	0x21, f                             DECFSZ   TEMP2
+00001b   2817     goto	0x17                                  GOTO     PAUSE_LOOP
+00001c   0008     return                                     RETURN
+                                           ;/******************************/
+                                           ;/*****  TEST HARNESS END  *****/
+                                           ;/******************************/
+                                           
+                                           
+                                           
+                                           
+                                           ;/***************************************************************************/
+                                           ;/ * Re-initialise required registers on power up and reset of application. */
+                                           ;/***************************************************************************/
+00001d   1022     bcf	0x22, 0              RESET_APP         BCF      APP_FLAGS, F_RESET_APP ; Clear reset application flag.
+00001e   10a2     bcf	0x22, 0x1                              BCF      APP_FLAGS, F_PAUSED  ; Ensure not paused.
+00001f   0008     return                                     RETURN
+                                           
+                                           
+                                           
+                                           ;/****************************************************************************/
+                                           ;/* Update the LED display, at the GPIO pins of the device. The output of    */
+                                           ;/* the actual GPIO outputs is always 0 for all pins. The LEDs are switched  */
+                                           ;/* by changing the port direction of each pin. This is done for power       */
+                                           ;/* saving reasons. The LEDs are held constantly high on one side, the other */
+                                           ;/* side is pulled low by making the pin an output to switch an LED on.      */
+                                           ;/* The LEDs are switched off by making the pin an input (high impedence).   */
+                                           ;/* This saves power, as when the LED is on - pin pulled low. Pressing a     */
+                                           ;/* switch has little effect as this also switches the LED on. But when the  */
+                                           ;/* LED is off, the pin is high impedence, so pressing a swtich just         */
+                                           ;/* switches the LED on. If the GPIO pin where held high to switch off the   */
+                                           ;/* LED, pressing a swtich would not only switch on the LED, but also pull   */
+                                           ;/* current from the output of the GPIO pin, and waste battery power.        */
+                                           ;/*                                                                          */
+                                           ;/* CALL WITH:                                                               */
+                                           ;/* LED_STATE - The state of the TRISIO register.                            */
+                                           ;/****************************************************************************/
+000020   0823     movf	0x23, w             LED_DISPLAY       MOVFW    LED_STATE            ; Get the current LED state to display.
+000021   3aff     xorlw	0xff                                 XORLW    0xFF                 ; Invert the state so TRISIO method lights LEDs correctly.
+000022   3935     andlw	0x35                                 ANDLW    (1 << SW_LED_1)|(1 << SW_LED_2)|(1 << SW_LED_3)|(1 << SW_LED_4)
+000023   1683     bsf	0x3, 0x5                               BSF      STATUS, RP0          ; Select Register bank 1
+000024   0085     movwf	0x5                                  MOVWF    TRISIO
+000025   1283     bcf	0x3, 0x5                               BCF      STATUS, RP0          ; Select Register bank 0
+000026   30ca     movlw	0xca                                 MOVLW    ~((1 << SW_LED_1)|(1 << SW_LED_2)|(1 << SW_LED_3)|(1 << SW_LED_4))
+000027   0585     andwf	0x5, f                               ANDWF    GPIO, F              ; Ensure GPIO register is clear for all LEDs.
+000028   0008     return                                     RETURN
+                                           
+                                           
+                                           
+                                           ;/***************************************/
+                                           ;/* Start a new LED animation sequence. */
+                                           ;/*                                     */
+                                           ;/* CALL WITH:                          */
+                                           ;/* W - Address of new LED animation.   */
+                                           ;/***************************************/
+000029   01a5     clrf	0x25                SET_LED_ANIM      CLRF     LED_SEQ_COUNT        ; Initialise the LED animation sequence.
+00002a   00a4     movwf	0x24                                 MOVWF    LED_SEQ_ADR
+00002b   01a3     clrf	0x23                                  CLRF     LED_STATE            ; Don't light any LEDs at start of LED animation.
+00002c   2020     call	0x20                                  CALL     LED_DISPLAY          ; Update LEDs.
+00002d   0008     return                                     RETURN
+                                           
+                                           
+                                           
+                                           ;/*******************************************/
+                                           ;/* Animate to next LED animation sequence. */
+                                           ;/*******************************************/
+00002e   1ca2     btfss	0x22, 0x1          NEXT_LED_ANIM_SEQ BTFSS    APP_FLAGS, F_PAUSED  ; Check if application is paused.
+00002f   2832     goto	0x32                                  GOTO     SEQ_NO_PAUSE
+000030   1ba3     btfsc	0x23, 0x7                            BTFSC    LED_STATE, F_LED_SEQ_PAUSE ; Don't change LED sequence if flagged to pause with application.
+000031   283e     goto	0x3e                                  GOTO     END_EEPROM_SEQ
+000032   0824     movf	0x24, w             SEQ_NO_PAUSE      MOVFW    LED_SEQ_ADR          ; Get the address for the current animation sequence.
+000033   0725     addwf	0x25, w                              ADDWF    LED_SEQ_COUNT, W     ; Add the offset to the position to get next value.
+000034   0aa5     incf	0x25, f                               INCF     LED_SEQ_COUNT        ; Point to the next address.
+000035   203f     call	0x3f                                  CALL     READ_EEPROM          ; Read the next animation value.
+000036   3aff     xorlw	0xff                                 XORLW    0xFF                 ; Check for end of animation.
+000037   1d03     btfss	0x3, 0x2                             BTFSS    STATUS, Z            ; A value of 0xFF, is the end of sequence.
+000038   283c     goto	0x3c                                  GOTO     SET_EEPROM_SEQ
+000039   01a5     clrf	0x25                                  CLRF     LED_SEQ_COUNT        ; Point to the start of sequence when at end.
+00003a   202e     call	0x2e                                  CALL     NEXT_LED_ANIM_SEQ    ; Get the start animation value, by recursion.
+00003b   3aff     xorlw	0xff                                 XORLW    0xFF                 ; Adjust for recursion.
+00003c   3aff     xorlw	0xff               SET_EEPROM_SEQ    XORLW    0xFF                 ; Undo end of sequence check effect on W.
+00003d   00a3     movwf	0x23                                 MOVWF    LED_STATE            ; Update LEDs.
+00003e   0008     return                   END_EEPROM_SEQ    RETURN
+                                           
+                                           
+                                           
+                                           ;/****************************************/
+                                           ;/* Read a value from an EEPROM address. */
+                                           ;/*                                      */
+                                           ;/* CALL WITH:                           */
+                                           ;/* W - EEPROM address.                  */
+                                           ;/*                                      */
+                                           ;/* RETURNS WITH:                        */
+                                           ;/* W - EEPROM value read.               */
+                                           ;/****************************************/
+00003f   1683     bsf	0x3, 0x5             READ_EEPROM       BSF      STATUS, RP0          ; Select Register bank 1
+000040   009b     movwf	0x1b                                 MOVWF    EEADR                ; Point to the address in EEPROM.
+000041   141c     bsf	0x1c, 0                                BSF      EECON1, RD           ; Read from EEPROM.
+000042   081a     movf	0x1a, w                               MOVFW    EEDATA               ; Read the value from EEPROM.
+000043   1283     bcf	0x3, 0x5                               BCF      STATUS, RP0          ; Select Register bank 0
+000044   0008     return                                     RETURN
+                                           
+                                           
+                                           
+                                           ;/*****************************/
+                                           ;/* Reset a RAM area to 0x00. */
+                                           ;/*                           */
+                                           ;/* CALL WITH:                */
+                                           ;/* FSR - Start RAM address.  */
+                                           ;/* W   - Byte clear count.   */
+                                           ;/*****************************/
+000045   0180     clrf	0                   CLEAR_RAM         CLRF     INDF                 ; Clear RAM address.
+000046   0a84     incf	0x4, f                                INCF     FSR                  ; Point to next RAM address,
+000047   3eff     addlw	0xff                                 ADDLW    0xFF                 ; Subtract 1 from loop count.
+000048   1d03     btfss	0x3, 0x2                             BTFSS    STATUS, Z
+000049   2845     goto	0x45                                  GOTO     CLEAR_RAM            ; Loop until all RAM addresses cleared.
+00004a   0008     return                                     RETURN
+                                           
+                                           
+                                           
+                                                             ORG      0x2100               ; EEPROM Area.
+                                           
+002100   0000     nop                      LED_SEQ_NULL      DE       0x00
+002101   00ff     movwf	0x7f                                 DE       0xFF
+                                           
+002102   0020     nop                      LED_SEQ_ROT_CLOCK DE       (1 << SW_LED_1)
+002103   0004     dw	0x4  ;unknown opcode                    DE       (1 << SW_LED_2)
+002104   0001     dw	0x1  ;unknown opcode                    DE       (1 << SW_LED_3)
+002105   0010     dw	0x10  ;unknown opcode                   DE       (1 << SW_LED_4)
+002106   00ff     movwf	0x7f                                 DE       0xFF
+                                           
+002107   00a0     movwf	0x20               LED_SEQ_LEVEL     DE       (1 << F_LED_SEQ_PAUSE)|(1 << SW_LED_1)
+002108   00a4     movwf	0x24                                 DE       (1 << F_LED_SEQ_PAUSE)|(1 << SW_LED_1)|(1 << SW_LED_2)
+002109   00a5     movwf	0x25                                 DE       (1 << F_LED_SEQ_PAUSE)|(1 << SW_LED_1)|(1 << SW_LED_2)|(1 << SW_LED_3)
+00210a   00b5     movwf	0x35                                 DE       (1 << F_LED_SEQ_PAUSE)|(1 << SW_LED_1)|(1 << SW_LED_2)|(1 << SW_LED_3)|(1 << SW_LED_4)
+00210b   00ff     movwf	0x7f                                 DE       0xFF
+                                           
+00210c   0035     dw	0x35  ;unknown opcode LED_SEQ_WIN       DE       (1 << SW_LED_1)|(1 << SW_LED_2)|(1 << SW_LED_3)|(1 << SW_LED_4)
+00210d   0000     nop                                        DE       0x00
+00210e   00ff     movwf	0x7f                                 DE       0xFF
+                                           
+00210f   0021     dw	0x21  ;unknown opcode LED_SEQ_LOSE      DE       (1 << SW_LED_1)|(1 << SW_LED_3)
+002110   0014     dw	0x14  ;unknown opcode                   DE       (1 << SW_LED_2)|(1 << SW_LED_4)
+002111   00ff     movwf	0x7f                                 DE       0xFF
+                                           
+                                           
+                                           
+                                                             END
+                                           
