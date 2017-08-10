@@ -1,0 +1,997 @@
+gplink-0.13.7 beta
+Copyright (c) 1998-2005 gputils project
+Listing File Generated: 6-29-2017  11:31:49
+ 
+ 
+Address  Value    Disassembly              Source
+-------  -----    -----------              ------
+                                                             LIST     P = P12F629
+                                           
+                                                             INCLUDE  "../P12F629.INC"
+                                                   LIST
+                                           
+                                           ;==========================================================================
+                                           ;  MPASM PIC12F629 processor include
+                                           ; 
+                                           ;  (c) Copyright 1999-2011 Microchip Technology, All rights reserved
+                                           ;==========================================================================
+                                           
+                                                   NOLIST
+                                           
+                                                             __CONFIG _INTRC_OSC_NOCLKOUT & _WDT_OFF & _PWRTE_ON & _MCLRE_OFF & _BOREN_OFF & _CP_OFF & _CPD_OFF
+                                           
+                                           
+                                           
+                                           ;# PicGame - Microchip PIC Microcontroller Repeat Game
+                                           ;# Copyright (C) 2017 Jason Birch
+                                           ;#
+                                           ;# This program is free software: you can redistribute it and/or modify
+                                           ;# it under the terms of the GNU General Public License as published by
+                                           ;# the Free Software Foundation, either version 3 of the License, or
+                                           ;# (at your option) any later version.
+                                           ;#
+                                           ;# This program is distributed in the hope that it will be useful,
+                                           ;# but WITHOUT ANY WARRANTY; without even the implied warranty of
+                                           ;# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+                                           ;# GNU General Public License for more details.
+                                           ;#
+                                           ;# You should have received a copy of the GNU General Public License
+                                           ;# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+                                           
+                                           
+                                           
+                                           ;/****************************************************************************/
+                                           ;/* PicGame_Part-11 - Microchip PIC Microcontroller Repeat Game              */
+                                           ;/*                  Part 11 - Game Play.                                    */
+                                           ;/* V1.00 2017-07-01 (C) Jason Birch                                         */
+                                           ;/*                                                                          */
+                                           ;/* PIC Game Programming Series to demonstrate programming a Microchip PIC   */
+                                           ;/* microcontroller. This part in the series covers game play.               */
+                                           ;/****************************************************************************/
+                                           
+                                           
+                                           
+                                           ; GPIO 0 - Switch/LED - Toggle sound on/off.
+                                           ; GPIO 1 - Speeker for beeping.
+                                           ; GPIO 2 - Switch/LED - Set max simultainious lit LED count in game play 1-4.
+                                           ; GPIO 3 - Not Used. (Vpp ICPS)
+                                           ; GPIO 4 - Switch/LED - Start game.
+                                           ; GPIO 5 - Switch/LED - Set game level 1-4.
+                                           
+                                           
+                                           
+                                           ;/*************/
+                                           ;/* Constants */
+                                           ;/*************/
+                                           LOSE_LOOP_COUNT   EQU      5                    ; Number of times to flash correct LED sequence when lost game. 
+                                           PAUSE_VERY_SHORT  EQU      2                    ; Prescale timer 0 to pause the current display for LED off cycle.
+                                           PAUSE_SHORT       EQU      8                    ; Prescale timer 0 to pause the current display for LED on cycle.
+                                           PAUSE_LONG        EQU      80                   ; Prescale timer 0 to pause the current display for end of game cycle.
+                                           TIMER0_TENTH      EQU      7                    ; Prescale timer 0 for 1/10 second intervals.
+                                           TIMER0_GAME       EQU      5                    ; Prescale timer 0 for game time intervals.
+                                           SLEEP_TIMEOUT     EQU      30                   ; Sleep inactivity time out, for low power standby mode.
+                                           PLAYER_TIMEOUT    EQU      10                   ; Player inactivity time out, to lose the game.
+                                           SILENT_FREQ_H     EQU      0xFF                 ; Timer period for tune slient period.
+                                           
+                                           SW_LED_1          EQU      GP5                  ; GPIO pin allocated for switch and LED 1.
+                                           SW_LED_2          EQU      GP2                  ; GPIO pin allocated for switch and LED 2.
+                                           SW_LED_3          EQU      GP0                  ; GPIO pin allocated for switch and LED 3.
+                                           SW_LED_4          EQU      GP4                  ; GPIO pin allocated for switch and LED 4.
+                                           
+                                           SPEAKER           EQU      GP1                  ; GPIO pin allocated for speaker.
+                                           
+                                           SW_LEVEL          EQU      GP5                  ; Switch for setting game level.
+                                           SW_SOUND          EQU      GP0                  ; Switch to toggle sound on/off.
+                                           SW_SIMULTANEOUS   EQU      GP2                  ; Switch for setting game max simultaneous LEDs.
+                                           SW_START          EQU      GP4                  ; Switch to start a game.
+                                           
+                                           MAX_RAND_COUNT    EQU      0x0F                 ; Maximum number of random numbers stored.
+                                           MAX_SEQ_COUNT     EQU      0x0F                 ; Maximum number of game sequences.
+                                           
+                                           F_LED_SEQ_PAUSE   EQU      7                    ; Flag an LED sequence will pause, with application pause.
+                                           
+                                           F_RESET_APP       EQU      0                    ; Re-initialise application flag.
+                                           F_PAUSED          EQU      1                    ; Application pausing flag.
+                                           F_SOUND_ON        EQU      2                    ; Application flag for sound on/off.
+                                           F_SOUND_ACTIVE    EQU      3                    ; Application flag for sound currently active.
+                                           F_PLAYER_TIMEOUT  EQU      4                    ; Player turn has timed out flag.
+                                           
+                                           M_SLEEP           EQU      b'00000000'          ; Mode low power sleep.
+                                           BM_SELECT         EQU      0                    ; Mode select.
+                                           M_SELECT          EQU      (1 << BM_SELECT)
+                                           BSM_SELECT_SEQ    EQU      0                    ; Mode select, sub mode display sequence LEDs, sound toggle, start game.
+                                           SM_SELECT_SEQ     EQU      (1 << BSM_SELECT_SEQ)
+                                           
+                                           BM_GAME           EQU      1                    ; Mode game.
+                                           M_GAME            EQU      (1 << BM_GAME)
+                                           BSM_GAME_PLAY     EQU      0                    ; Mode game, sub mode game play.
+                                           SM_GAME_PLAY      EQU      (1 << BSM_GAME_PLAY)
+                                           
+                                           
+                                           
+                                           ;/******************/
+                                           ;/* RAM Registers. */
+                                           ;/******************/
+                                           CBLOCK            0x20
+                                                             INT_W                         ; Temporary store for W during interupt.
+                                                             INT_STATUS                    ; Temporary store for STATUS during interupt.
+                                                             TEMP1                         ; Temporary register.
+                                                             TEMP2                         ; Temporary register.
+                                                             TEMP3                         ; Temporary register.
+                                                             TEMP4                         ; Temporary register.
+                                           
+                                                             TIMER0_TENTH_COUNT            ; Prescale timer 0 to 1/10 second.
+                                                             TIMER0_GAME_COUNT             ; Prescale timer 0 to game intervals.
+                                                             PAUSE_COUNT                   ; Pause application timeout.
+                                                             SLEEP_TIMEOUT_COUNT           ; Inactive timeout to switch to sleep mode.
+                                                             PLAYER_TIMEOUT_COUNT          ; Inactive timeout for player in game.
+                                           
+                                                             BEEP_FREQ_L                   ; Frequency of current beep.
+                                                             BEEP_FREQ_H
+                                                             BEEP_LEN_L                    ; Duration of current beep.
+                                                             BEEP_LEN_H
+                                                             TUNE_PTR                      ; Pointer to current note in tune.
+                                           
+                                                             APP_FLAGS                     ; Application flags.
+                                                             LED_STATE                     ; Current LED state.
+                                                             LED_COMPARE                   ; Keys pressed to compare with LED sequence pattern.
+                                                             KEY_PRESS                     ; Keys pressed.
+                                                             KEY_LOG                       ; Keys pressed during player game sequence.
+                                           
+                                                             LEVEL                         ; Game level.
+                                                             SIMULTANEOUS                  ; Game max simultaneous LEDs.
+                                           
+                                                             MODE                          ; Application mode.
+                                                             SUB_MODE                      ; Application sub mode.
+                                           
+                                                             LED_SEQ_ADR                   ; LED Sequence pattern address.
+                                                             LED_SEQ_COUNT                 ; LED Sequence pattern count.
+                                           
+                                                             SEQ_MAX_COUNT                 ; Game max sequence count for selected level.
+                                                             SEQ_GAME_COUNT                ; Game current sequence count.
+                                                             SEQ_COUNT                     ; Game current playback sequence count.
+                                           
+                                                             RAND_GET_COUNT                ; Random address offset for getting random values.
+                                                             RAND_MAKE_COUNT               ; Random address offset for writing new random values.
+                                           ENDC
+                                           
+                                           
+                                           CBLOCK            0x40
+                                                             SEQUENCE                      ; Game sequence, including 16 data words after this data word.
+                                           ENDC
+                                           
+                                           
+                                           CBLOCK            0x50
+                                                             RAND                          ; Random number sequence, including 16 data words after this data word.
+                                           ENDC
+                                           
+                                           
+                                                             CODE
+                                           
+                                           ;/**********************************/
+                                           ;/* Reset program location vector. */
+                                           ;/**********************************/
+                                                             ORG      0x0000
+                                           
+000000   3020     movlw	0x20                                 MOVLW    0x20                 ; Clear all RAM values, except random cache.
+000001   0084     movwf	0x4                                  MOVWF    FSR                  ; Set first RAM address.
+000002   3030     movlw	0x30                                 MOVLW    0x30                 ; Clear 48 bytes of RAM.
+000003   284d     goto	0x4d                                  GOTO     INIT                 ; Navigate around PIC intrupt vector address.
+                                           
+                                           
+                                           
+                                           ;/*************************************/
+                                           ;/* Interupt program location vector. */
+                                           ;/*************************************/
+                                                             ORG      0x0004
+                                           
+000004   00a0     movwf	0x20               INT_HANDLE        MOVWF    INT_W                ; Store registers from application duting interupt.
+000005   0803     movf	0x3, w                                MOVFW    STATUS
+000006   00a1     movwf	0x21                                 MOVWF    INT_STATUS
+                                           
+000007   1283     bcf	0x3, 0x5                               BCF      STATUS, RP0          ; Select Register bank 0
+                                           
+000008   1c0b     btfss	0xb, 0             INT_GP_INT        BTFSS    INTCON, GPIF         ; Did a GPIO interupt trigger?
+000009   280b     goto	0xb                                   GOTO     INT_TIMER1
+00000a   100b     bcf	0xb, 0                                 BCF      INTCON, GPIF         ; GPIO Interupts for wake up from sleep only - no operation.
+                                           
+00000b   1c0c     btfss	0xc, 0             INT_TIMER1        BTFSS    PIR1, TMR1IF         ; Did a TIMER1 interupt trigger?
+00000c   2825     goto	0x25                                  GOTO     INT_TIMER0
+00000d   1db0     btfss	0x30, 0x3                            BTFSS    APP_FLAGS, F_SOUND_ACTIVE ; Is sound currently active?
+00000e   2824     goto	0x24                                  GOTO     INT_TIMER1_END
+00000f   082b     movf	0x2b, w                               MOVFW    BEEP_FREQ_L          ; Reset timer 1 count to required beep frequency period.
+000010   008e     movwf	0xe                                  MOVWF    TMR1L
+000011   082c     movf	0x2c, w                               MOVFW    BEEP_FREQ_H
+000012   008f     movwf	0xf                                  MOVWF    TMR1H
+000013   1d03     btfss	0x3, 0x2                             BTFSS    STATUS, Z            ; If quiet peiod, silent beep.
+000014   2818     goto	0x18                                  GOTO     MAKE_SOUND
+000015   30ff     movlw	0xff                                 MOVLW    SILENT_FREQ_H        ; Silent periods have a specific frequency period as
+000016   008f     movwf	0xf                                  MOVWF    TMR1H                ; the period effects the length of the duration for the beep.
+000017   281e     goto	0x1e                                  GOTO     SPEAKER_ON
+000018   0805     movf	0x5, w              MAKE_SOUND        MOVFW    GPIO                 ; When using bidirectional ports, read port before bit operations.
+000019   1885     btfsc	0x5, 0x1                             BTFSC    GPIO, SPEAKER        ; Check the current state of the speaker GPIO output.
+00001a   281d     goto	0x1d                                  GOTO     SPEAKER_OFF
+00001b   1485     bsf	0x5, 0x1                               BSF      GPIO, SPEAKER        ; Toggle GPIO to on.
+00001c   281e     goto	0x1e                                  GOTO     SPEAKER_ON
+00001d   1085     bcf	0x5, 0x1             SPEAKER_OFF       BCF      GPIO, SPEAKER        ; Toggle GPIO to off.
+00001e   0bad     decfsz	0x2d, f           SPEAKER_ON        DECFSZ   BEEP_LEN_L           ; Play beep for specified duration.
+00001f   2824     goto	0x24                                  GOTO     INT_TIMER1_END
+000020   0bae     decfsz	0x2e, f                             DECFSZ   BEEP_LEN_H
+000021   2824     goto	0x24                                  GOTO     INT_TIMER1_END
+000022   11b0     bcf	0x30, 0x3                              BCF      APP_FLAGS, F_SOUND_ACTIVE ; When duration complete stop beep by flagging beep off.
+000023   1085     bcf	0x5, 0x1                               BCF      GPIO, SPEAKER        ; Switch off speaker at end for low power as default.
+000024   100c     bcf	0xc, 0               INT_TIMER1_END    BCF      PIR1, TMR1IF
+                                           
+000025   1d0b     btfss	0xb, 0x2           INT_TIMER0        BTFSS    INTCON, T0IF         ; Did a TIMER0 interupt trigger?
+000026   2846     goto	0x46                                  GOTO     INT_END
+000027   0ba6     decfsz	0x26, f                             DECFSZ   TIMER0_TENTH_COUNT   ; Scale timer 0 to 1/10 second.
+000028   2845     goto	0x45                                  GOTO     INT_TIMER0_END
+000029   3007     movlw	0x7                                  MOVLW    TIMER0_TENTH
+00002a   00a6     movwf	0x26                                 MOVWF    TIMER0_TENTH_COUNT
+00002b   2199     call	0x199                                 CALL     PLAY_NEXT_BEEP       ; Play the next note of a tune, if playing.
+00002c   215a     call	0x15a                                 CALL     READ_KEYS            ; Read switch states.
+00002d   21d2     call	0x1d2                                 CALL     LED_DISPLAY          ; Update LEDs.
+00002e   21ba     call	0x1ba                                 CALL     MAKE_RAND            ; Generate a random number.
+00002f   1cb0     btfss	0x30, 0x1                            BTFSS    APP_FLAGS, F_PAUSED  ; Is pause active?
+000030   2834     goto	0x34                                  GOTO     NO_PAUSE
+000031   0ba8     decfsz	0x28, f                             DECFSZ   PAUSE_COUNT          ; Time the required pause length.
+000032   2834     goto	0x34                                  GOTO     NO_PAUSE
+000033   10b0     bcf	0x30, 0x1                              BCF      APP_FLAGS, F_PAUSED
+000034   0ba7     decfsz	0x27, f           NO_PAUSE          DECFSZ   TIMER0_GAME_COUNT    ; Scale timer 0 to game intervals.
+000035   2845     goto	0x45                                  GOTO     INT_TIMER0_END
+000036   3005     movlw	0x5                                  MOVLW    TIMER0_GAME
+000037   00a7     movwf	0x27                                 MOVWF    TIMER0_GAME_COUNT
+000038   18b0     btfsc	0x30, 0x1                            BTFSC    APP_FLAGS, F_PAUSED  ; Is pause active?
+000039   2840     goto	0x40                                  GOTO     NON_GAME_OPS         ; If paused, only perform non game operations.
+00003a   08aa     movf	0x2a, f                               MOVF     PLAYER_TIMEOUT_COUNT, F ; Is player turn active?
+00003b   1903     btfsc	0x3, 0x2                             BTFSC    STATUS, Z
+00003c   2840     goto	0x40                                  GOTO     NON_GAME_OPS
+00003d   0baa     decfsz	0x2a, f           PLAYER_TURN       DECFSZ   PLAYER_TIMEOUT_COUNT ; Check for player inactivity time out.
+00003e   2840     goto	0x40                                  GOTO     NON_GAME_OPS
+00003f   1630     bsf	0x30, 0x4                              BSF      APP_FLAGS, F_PLAYER_TIMEOUT ; Flag the player turn has timed out.
+000040   0ba9     decfsz	0x29, f           NON_GAME_OPS      DECFSZ   SLEEP_TIMEOUT_COUNT  ; Set sleep mode when inactive for too long.
+000041   2844     goto	0x44                                  GOTO     NO_SLEEP
+000042   3000     movlw	0                                    MOVLW    M_SLEEP
+000043   207b     call	0x7b                                  CALL     SET_MODE
+000044   21e0     call	0x1e0               NO_SLEEP          CALL     NEXT_LED_ANIM_SEQ    ; Animate to next LED sequence.
+000045   110b     bcf	0xb, 0x2             INT_TIMER0_END    BCF      INTCON, T0IF
+                                           
+000046   0821     movf	0x21, w             INT_END           MOVFW    INT_STATUS           ; Restore registers for application to continue after interupt.
+000047   0083     movwf	0x3                                  MOVWF    STATUS
+000048   0820     movf	0x20, w                               MOVFW    INT_W
+000049   1503     bsf	0x3, 0x2                               BSF      STATUS, Z
+00004a   1d21     btfss	0x21, 0x2                            BTFSS    INT_STATUS, Z
+00004b   1103     bcf	0x3, 0x2                               BCF      STATUS, Z
+00004c   0009     retfie                                     RETFIE
+                                           
+                                           
+                                           
+                                           ;/*******************************/
+                                           ;/* Initialise microcontroller. */
+                                           ;/*******************************/
+00004d   21f7     call	0x1f7               INIT              CALL     CLEAR_RAM            ; Clear all RAM values.
+00004e   3004     movlw	0x4                                  MOVLW    0x04                 ; Set the initial maximum sequence value for default level 1.
+00004f   00bb     movwf	0x3b                                 MOVWF    SEQ_MAX_COUNT
+000050   1283     bcf	0x3, 0x5             RESET_INIT        BCF      STATUS, RP0          ; Select Register bank 0
+000051   3007     movlw	0x7                                  MOVLW    0x07                 ; Switch comparitor off.
+000052   0099     movwf	0x19                                 MOVWF    CMCON                ; Comparitor in lowest power mode.
+000053   1683     bsf	0x3, 0x5                               BSF      STATUS, RP0          ; Select Register bank 1
+000054   3004     movlw	0x4                                  MOVLW    (1 << PS2)           ; Prescale timer 0 for game timing.
+000055   0081     movwf	0x1                                  MOVWF    OPTION_REG           ; Configure Timer0.
+000056   140c     bsf	0xc, 0                                 BSF      PIE1, TMR1IE         ; Configure Timer1 interupts.
+000057   0185     clrf	0x5                                   CLRF     TRISIO               ; All LED GPIO as an output.
+000058   3035     movlw	0x35                                 MOVLW    (1 << SW_LED_1)|(1 << SW_LED_2)|(1 << SW_LED_3)|(1 << SW_LED_4)
+000059   0096     movwf	0x16                                 MOVWF    IOC                  ; Interupt on change of switch state.
+00005a   1283     bcf	0x3, 0x5                               BCF      STATUS, RP0          ; Select Register bank 0
+00005b   0085     movwf	0x5                                  MOVWF    GPIO                 ; Switch all LED GPIO outputs to on.
+00005c   3005     movlw	0x5                                  MOVLW    (1 << NOT_T1SYNC)|(1 << TMR1ON)
+00005d   0090     movwf	0x10                                 MOVWF    T1CON                ; Prescale timer 1 for beep frequencies.
+00005e   100c     bcf	0xc, 0                                 BCF      PIR1, TMR1IF         ; Prepair timer 1 for first interupt.
+                                           
+00005f   206d     call	0x6d                                  CALL     RESET_APP            ; Reset application variables.
+                                           
+000060   30e8     movlw	0xe8                                 MOVLW    (1 << GIE)|(1 << PEIE)|(1 << GPIE)|(1 << TMR0IE)
+000061   008b     movwf	0xb                                  MOVWF    INTCON               ; Enable interupts.
+000062   018c     clrf	0xc                                   CLRF     PIR1                 ; Clear interupt triggered flags.
+                                           
+000063   08b7     movf	0x37, f             LOOP              MOVF     MODE, F              ; Is sleep mode active?
+000064   1903     btfsc	0x3, 0x2                             BTFSC    STATUS, Z
+000065   207f     call	0x7f                                  CALL     MODE_SLEEP           ; In sleep mode, sleep until key press.
+000066   1830     btfsc	0x30, 0                              BTFSC    APP_FLAGS, F_RESET_APP ; Returning from sleep, flags to reset the application.
+000067   2850     goto	0x50                                  GOTO     RESET_INIT
+000068   1837     btfsc	0x37, 0                              BTFSC    MODE, BM_SELECT      ; Is current mode, select mode?
+000069   2089     call	0x89                                  CALL     MODE_SELECT
+00006a   18b7     btfsc	0x37, 0x1                            BTFSC    MODE, BM_GAME        ; Is current mode, game mode?
+00006b   20cc     call	0xcc                                  CALL     MODE_GAME
+00006c   2863     goto	0x63                                  GOTO     LOOP                 ; Infinite main loop.
+                                           
+                                           
+                                           
+                                           ;/***************************************************************************/
+                                           ;/ * Re-initialise required registers on power up and reset of application. */
+                                           ;/***************************************************************************/
+00006d   3007     movlw	0x7                RESET_APP         MOVLW    TIMER0_TENTH         ; Reset timer 0 1/10 second prescale count.
+00006e   00a6     movwf	0x26                                 MOVWF    TIMER0_TENTH_COUNT
+00006f   3005     movlw	0x5                                  MOVLW    TIMER0_GAME          ; Reset timer 0 game prescale count.
+000070   00a7     movwf	0x27                                 MOVWF    TIMER0_GAME_COUNT
+000071   3030     movlw	0x30                                 MOVLW    SLEEP_TIMEOUT        ; Reset inactive time out count.
+000072   00a9     movwf	0x29                                 MOVWF    SLEEP_TIMEOUT_COUNT
+000073   01aa     clrf	0x2a                                  CLRF     PLAYER_TIMEOUT_COUNT ; Indicate not currently player turn.
+000074   01a8     clrf	0x28                                  CLRF     PAUSE_COUNT          ; Set to not currently pausing.
+000075   01af     clrf	0x2f                                  CLRF     TUNE_PTR             ; No tune currently playing.
+000076   3001     movlw	0x1                                  MOVLW    M_SELECT             ; Set select mode on power up.
+000077   207b     call	0x7b                                  CALL     SET_MODE
+000078   1030     bcf	0x30, 0                                BCF      APP_FLAGS, F_RESET_APP ; Clear reset application flag.
+000079   10b0     bcf	0x30, 0x1                              BCF      APP_FLAGS, F_PAUSED  ; Ensure not paused.
+00007a   0008     return                                     RETURN
+                                           
+                                           
+                                           
+                                           ;/******************************/
+                                           ;/* Set the current game mode. */
+                                           ;/ CALL WITH:                  */
+                                           ;/* W - New mode to set.       */
+                                           ;/******************************/
+00007b   00b7     movwf	0x37               SET_MODE          MOVWF    MODE                 ; Change the current game mode to a new mode.
+00007c   01b8     clrf	0x38                                  CLRF     SUB_MODE             ; Sub mode initialise.
+00007d   01b3     clrf	0x33                                  CLRF     KEY_PRESS            ; Clear any flagged key presses from previous mode.
+00007e   0008     return                                     RETURN
+                                           
+                                           
+                                           
+                                           ;/**************************************************************************/
+                                           ;/* Place the device in low power sleep mode, and wake up from sleep mode. */
+                                           ;/**************************************************************************/
+00007f   128b     bcf	0xb, 0x5             MODE_SLEEP        BCF      INTCON, TMR0IE       ; Disable timer 0.
+000080   1010     bcf	0x10, 0                                BCF      T1CON, TMR1ON        ; Stop timer 1.
+000081   3037     movlw	0x37                                 MOVLW    LED_SEQ_NULL         ; Don't display LEDs so no LEDs are powered duting sleep
+000082   21db     call	0x1db                                 CALL     SET_LED_ANIM         ; and when woken up again from sleep mode.
+000083   215a     call	0x15a                                 CALL     READ_KEYS            ; Put switches in read state.
+000084   218d     call	0x18d                                 CALL     WAIT_NO_KEYS         ; Wait for all keys to be released before sleeping.
+000085   0063     sleep                                      SLEEP                         ; Low power mode until key pressed.
+000086   1430     bsf	0x30, 0                                BSF      APP_FLAGS, F_RESET_APP ; Flag to reset application.
+000087   218d     call	0x18d                                 CALL     WAIT_NO_KEYS         ; Wait for all keys to be released before resuming.
+000088   0008     return                                     RETURN
+                                           
+                                           
+                                           
+                                           ;/*******************************************************/
+                                           ;/* Handle application mode operations for SELECT mode. */
+                                           ;/*******************************************************/
+000089   08b8     movf	0x38, f             MODE_SELECT       MOVF     SUB_MODE, F          ; Is current sub mode, initialize?
+00008a   1d03     btfss	0x3, 0x2                             BTFSS    STATUS, Z
+00008b   2891     goto	0x91                                  GOTO     SUB_SELECT_SEQ       ; Current mode is game option selection.
+00008c   3001     movlw	0x1                                  MOVLW    SM_SELECT_SEQ        ; Set the next sub mode game option selection.
+00008d   00b8     movwf	0x38                                 MOVWF    SUB_MODE
+00008e   3039     movlw	0x39                                 MOVLW    LED_SEQ_ROT_CLOCK    ; Rotating LED animation to show application is active and waiting.
+00008f   21db     call	0x1db                                 CALL     SET_LED_ANIM
+000090   28cb     goto	0xcb                                  GOTO     MODE_SELECT_END
+000091   1eb3     btfss	0x33, 0x5          SUB_SELECT_SEQ    BTFSS    KEY_PRESS, SW_LEVEL  ; If level select key has been pressed.
+000092   28a8     goto	0xa8                                  GOTO     SELECT_KEY1
+000093   0ab5     incf	0x35, f                               INCF     LEVEL                ; Increase game level.
+000094   3004     movlw	0x4                                  MOVLW    0x04                 ; If game level too high, set back to level 0.
+000095   0635     xorwf	0x35, w                              XORWF    LEVEL, W
+000096   1903     btfsc	0x3, 0x2                             BTFSC    STATUS, Z
+000097   01b5     clrf	0x35                                  CLRF     LEVEL
+000098   0835     movf	0x35, w                               MOVFW    LEVEL                ; Set the number of sequence values for selected level.
+000099   00bb     movwf	0x3b                                 MOVWF    SEQ_MAX_COUNT        ; Calculation is Sequence Count = (1 + Level) * 4
+00009a   3001     movlw	0x1                                  MOVLW    0x01                 ; Level 1 = (1 + 0) * 4 = 4
+00009b   07bb     addwf	0x3b, f                              ADDWF    SEQ_MAX_COUNT, F     ; Level 2 = (1 + 1) * 4 = 8
+00009c   0dbb     rlf	0x3b, f                                RLF      SEQ_MAX_COUNT        ; Level 3 = (1 + 2) * 4 = 12
+00009d   0dbb     rlf	0x3b, f                                RLF      SEQ_MAX_COUNT        ; Level 4 = (1 + 3) * 4 = 16
+00009e   303e     movlw	0x3e                                 MOVLW    LED_SEQ_LEVEL        ; Display the currently selected level on the LEDs.
+00009f   0735     addwf	0x35, w                              ADDWF    LEVEL, W
+0000a0   21f1     call	0x1f1                                 CALL     READ_EEPROM          ; Look up selected level LED value.
+0000a1   00b1     movwf	0x31                                 MOVWF    LED_STATE
+0000a2   3010     movlw	0x10                                 MOVLW    TUNE_LEVEL_LOOKUP    ; Play level selection tune.
+0000a3   0735     addwf	0x35, w                              ADDWF    LEVEL, W
+0000a4   21f1     call	0x1f1                                 CALL     READ_EEPROM
+0000a5   00af     movwf	0x2f                                 MOVWF    TUNE_PTR
+0000a6   3008     movlw	0x8                                  MOVLW    PAUSE_SHORT          ; Pause application for player to view new selected level.
+0000a7   2194     call	0x194                                 CALL     PAUSE
+0000a8   1d33     btfss	0x33, 0x2          SELECT_KEY1       BTFSS    KEY_PRESS, SW_SIMULTANEOUS ; If simultainious key has been pressed.
+0000a9   28b9     goto	0xb9                                  GOTO     SELECT_KEY2
+0000aa   0ab6     incf	0x36, f                               INCF     SIMULTANEOUS         ; Increase number of simultanious LED selection.
+0000ab   3004     movlw	0x4                                  MOVLW    0x04                 ; If simultanious too high, reset to 0, which is 1 LED.
+0000ac   0636     xorwf	0x36, w                              XORWF    SIMULTANEOUS, W
+0000ad   1903     btfsc	0x3, 0x2                             BTFSC    STATUS, Z
+0000ae   01b6     clrf	0x36                                  CLRF     SIMULTANEOUS
+0000af   303e     movlw	0x3e                                 MOVLW    LED_SEQ_LEVEL        ; Display the currently selected simultanious on the LEDs.
+0000b0   0736     addwf	0x36, w                              ADDWF    SIMULTANEOUS, W
+0000b1   21f1     call	0x1f1                                 CALL     READ_EEPROM          ; Look up selected level LED value.
+0000b2   00b1     movwf	0x31                                 MOVWF    LED_STATE
+0000b3   3010     movlw	0x10                                 MOVLW    TUNE_LEVEL_LOOKUP    ; Play simultanious selection tune.
+0000b4   0736     addwf	0x36, w                              ADDWF    SIMULTANEOUS, W
+0000b5   21f1     call	0x1f1                                 CALL     READ_EEPROM
+0000b6   00af     movwf	0x2f                                 MOVWF    TUNE_PTR
+0000b7   3008     movlw	0x8                                  MOVLW    PAUSE_SHORT          ; Pause application for player to view new selected level.
+0000b8   2194     call	0x194                                 CALL     PAUSE
+0000b9   1c33     btfss	0x33, 0            SELECT_KEY2       BTFSS    KEY_PRESS, SW_SOUND  ; If sound on/off toggle key has been pressed.
+0000ba   28c6     goto	0xc6                                  GOTO     SELECT_KEY3
+0000bb   3081     movlw	0x81                                 MOVLW    (1 << F_LED_SEQ_PAUSE)|(1 << SW_SOUND) ; Light the sound on/off LED.
+0000bc   00b1     movwf	0x31                                 MOVWF    LED_STATE
+0000bd   1d30     btfss	0x30, 0x2                            BTFSS    APP_FLAGS, F_SOUND_ON
+0000be   28c1     goto	0xc1                                  GOTO     SOUND_ON
+0000bf   1130     bcf	0x30, 0x2            SOUND_OFF         BCF      APP_FLAGS, F_SOUND_ON ; Toggle sound off.
+0000c0   28c4     goto	0xc4                                  GOTO     SOUND_PAUSE
+0000c1   1530     bsf	0x30, 0x2            SOUND_ON          BSF      APP_FLAGS, F_SOUND_ON ; Toggle sound on.
+0000c2   3028     movlw	0x28                                 MOVLW    TUNE_SOUND_ON        ; Play sound on tune.
+0000c3   00af     movwf	0x2f                                 MOVWF    TUNE_PTR
+0000c4   3008     movlw	0x8                SOUND_PAUSE       MOVLW    PAUSE_SHORT          ; Pause application for player to view selected sound setting.
+0000c5   2194     call	0x194                                 CALL     PAUSE
+0000c6   1e33     btfss	0x33, 0x4          SELECT_KEY3       BTFSS    KEY_PRESS, SW_START  ; If start game button has been pressed.
+0000c7   28ca     goto	0xca                                  GOTO     SELECT_KEY4
+0000c8   3002     movlw	0x2                                  MOVLW    M_GAME               ; Change mode to start game.
+0000c9   207b     call	0x7b                                  CALL     SET_MODE
+0000ca   01b3     clrf	0x33                SELECT_KEY4       CLRF     KEY_PRESS            ; Clear processed key press flags.
+0000cb   0008     return                   MODE_SELECT_END   RETURN
+                                           
+                                           
+                                           
+                                           ;/*****************************************************/
+                                           ;/* Handle application mode operations for GAME mode. */
+                                           ;/*****************************************************/
+0000cc   08b8     movf	0x38, f             MODE_GAME         MOVF     SUB_MODE, F          ; Is current sub mode, initialize?
+0000cd   1d03     btfss	0x3, 0x2                             BTFSS    STATUS, Z
+0000ce   28d6     goto	0xd6                                  GOTO     SUB_GAME_PLAY        ; Sub mode play.
+0000cf   3001     movlw	0x1                                  MOVLW    SM_GAME_PLAY         ; Set the next sub mode to play.
+0000d0   00b8     movwf	0x38                                 MOVWF    SUB_MODE
+0000d1   3037     movlw	0x37                                 MOVLW    LED_SEQ_NULL         ; Don't display LEDs for a period, to indicate game start.
+0000d2   21db     call	0x1db                                 CALL     SET_LED_ANIM
+0000d3   01bd     clrf	0x3d                                  CLRF     SEQ_COUNT            ; Start game at first LED sequence.
+0000d4   1230     bcf	0x30, 0x4                              BCF      APP_FLAGS, F_PLAYER_TIMEOUT ; Ensure player time out flag is clear at game start.
+0000d5   28fe     goto	0xfe                                  GOTO     SUB_GAME_END
+0000d6   1a30     btfsc	0x30, 0x4          SUB_GAME_PLAY     BTFSC    APP_FLAGS, F_PLAYER_TIMEOUT ; Check for player turn time out.
+0000d7   28ea     goto	0xea                                  GOTO     SUB_GAME_LOSE
+0000d8   083b     movf	0x3b, w                               MOVFW    SEQ_MAX_COUNT        ; Check for player win, full sequence count.
+0000d9   063d     xorwf	0x3d, w                              XORWF    SEQ_COUNT, W
+0000da   1903     btfsc	0x3, 0x2                             BTFSC    STATUS, Z            ; Player wins at the end of the sequence.
+0000db   28e5     goto	0xe5                                  GOTO     SUB_GAME_WIN
+0000dc   3008     movlw	0x8                                  MOVLW    PAUSE_SHORT          ; Pause for a period before the start of each sequence.
+0000dd   2194     call	0x194                                 CALL     PAUSE
+0000de   2100     call	0x100                                 CALL     SEQUENCE_ADD         ; Add next sequence LED pattern to end of sequence.
+0000df   2109     call	0x109                                 CALL     SEQUENCE_PLAY        ; Play LED sequence patterns from start to current sequence.
+0000e0   2130     call	0x130                                 CALL     SEQUENCE_REPEAT      ; Verify user key presses match sequence, player turn.
+0000e1   08aa     movf	0x2a, f                               MOVF     PLAYER_TIMEOUT_COUNT, F ; Check for player timeout during player turn.
+0000e2   1903     btfsc	0x3, 0x2                             BTFSC    STATUS, Z            ; Player loses after player timeout.
+0000e3   28ea     goto	0xea                                  GOTO     SUB_GAME_LOSE
+0000e4   28fe     goto	0xfe                                  GOTO     SUB_GAME_END
+                                           
+0000e5   3043     movlw	0x43               SUB_GAME_WIN      MOVLW    LED_SEQ_WIN          ; Display win LED animation.
+0000e6   21db     call	0x1db                                 CALL     SET_LED_ANIM
+0000e7   302c     movlw	0x2c                                 MOVLW    TUNE_WIN             ; Play win tune.
+0000e8   00af     movwf	0x2f                                 MOVWF    TUNE_PTR
+0000e9   28fa     goto	0xfa                                  GOTO     SUB_GAME_SLEEP
+                                           
+0000ea   3033     movlw	0x33               SUB_GAME_LOSE     MOVLW    TUNE_LOSE            ; Play lose tune.
+0000eb   00af     movwf	0x2f                                 MOVWF    TUNE_PTR
+0000ec   3005     movlw	0x5                                  MOVLW    LOSE_LOOP_COUNT      ; Flash the correct next LED sequence. 
+0000ed   00a3     movwf	0x23                                 MOVWF    TEMP2
+0000ee   3080     movlw	0x80               LOSE_LOOP         MOVLW    (1 << F_LED_SEQ_PAUSE) ; Flag the displayed LEDs not to animate.
+0000ef   00b1     movwf	0x31                                 MOVWF    LED_STATE            ; Clear LED display.
+0000f0   3002     movlw	0x2                                  MOVLW    PAUSE_VERY_SHORT     ; Display no LEDs for a very short period of time.
+0000f1   2194     call	0x194                                 CALL     PAUSE
+0000f2   0832     movf	0x32, w                               MOVFW    LED_COMPARE          ; Display the correct LED sequence.
+0000f3   04b1     iorwf	0x31, f                              IORWF    LED_STATE, F
+0000f4   3008     movlw	0x8                                  MOVLW    PAUSE_SHORT          ; Pause for a period to show player correct sequence.
+0000f5   2194     call	0x194                                 CALL     PAUSE
+0000f6   0ba3     decfsz	0x23, f                             DECFSZ   TEMP2
+0000f7   28ee     goto	0xee                                  GOTO     LOSE_LOOP                  
+0000f8   3046     movlw	0x46                                 MOVLW    LED_SEQ_LOSE         ; Display lose LED animation.
+0000f9   21db     call	0x1db                                 CALL     SET_LED_ANIM
+                                           
+0000fa   3080     movlw	0x80               SUB_GAME_SLEEP    MOVLW    PAUSE_LONG           ; Delay before going to sleep for low power after game end.
+0000fb   2194     call	0x194                                 CALL     PAUSE
+0000fc   3000     movlw	0                                    MOVLW    M_SLEEP              ; Change to low power sleep mode.
+0000fd   207b     call	0x7b                                  CALL     SET_MODE
+0000fe   01b3     clrf	0x33                SUB_GAME_END      CLRF     KEY_PRESS            ; Clear processed key press flags.
+0000ff   0008     return                                     RETURN
+                                           
+                                           
+                                           
+                                           ;/**************************************************************************/
+                                           ;/* Add a new random LED sequence to the end of the current LED sequences. */
+                                           ;/**************************************************************************/
+000100   21c8     call	0x1c8               SEQUENCE_ADD      CALL     GET_RAND             ; Gat a random value.
+000101   00a3     movwf	0x23                                 MOVWF    TEMP2                ; Store the random value.
+000102   3040     movlw	0x40                                 MOVLW    SEQUENCE             ; Point to the next empty LED sequence memory location.
+000103   073d     addwf	0x3d, w                              ADDWF    SEQ_COUNT, W
+000104   0084     movwf	0x4                                  MOVWF    FSR
+000105   0823     movf	0x23, w                               MOVFW    TEMP2                ; Restore the random value.
+000106   0080     movwf	0                                    MOVWF    INDF                 ; Save the random value to the next sequence memory location.
+000107   0abd     incf	0x3d, f                               INCF     SEQ_COUNT            ; Increment the sequence count for the current sequence.
+000108   0008     return                                     RETURN
+                                           
+                                           
+                                           
+                                           ;/**************************************************************************/
+                                           ;/* Play the current sequence of LED patterns with audio if audio enabled, */
+                                           ;/* from sequence 1 to the current end of sequence.                        */
+                                           ;/**************************************************************************/
+000109   01a4     clrf	0x24                SEQUENCE_PLAY     CLRF     TEMP3                ; Reset sequence pointer.
+00010a   3080     movlw	0x80               SEQ_PLAY_NEXT     MOVLW    (1 << F_LED_SEQ_PAUSE) ; Flag the displayed LEDs not to animate.
+00010b   00b1     movwf	0x31                                 MOVWF    LED_STATE            ; Clear LED display.
+00010c   3002     movlw	0x2                                  MOVLW    PAUSE_VERY_SHORT     ; Display no LEDs for a very short period of time
+00010d   2194     call	0x194                                 CALL     PAUSE                ; between each LED sequence being displayed.
+00010e   3040     movlw	0x40                                 MOVLW    SEQUENCE             ; Get next sequence value.
+00010f   0724     addwf	0x24, w                              ADDWF    TEMP3, W
+000110   0084     movwf	0x4                                  MOVWF    FSR
+000111   0800     movf	0, w                                  MOVFW    INDF                 ; Read the current sequence value from memory.
+000112   00a5     movwf	0x25                                 MOVWF    TEMP4                ; Store current sequence value for manipulation.
+000113   0836     movf	0x36, w                               MOVFW    SIMULTANEOUS         ; Get maximum number of simultaneous LEDs to light.
+000114   00a3     movwf	0x23                                 MOVWF    TEMP2                ; Store simultaneous count for a loop counter.
+000115   0aa3     incf	0x23, f                               INCF     TEMP2                ; Convert from zero offset to minimum value of one.
+000116   01a2     clrf	0x22                                  CLRF     TEMP1                ; Construct a beep note from the LED pattern into TEMP1.
+000117   3003     movlw	0x3                SEQ_PLAY_LOOP     MOVLW    b'00000011'          ; Each LED offset definition is in each two bits of the sequence value.
+000118   0525     andwf	0x25, w                              ANDWF    TEMP4, W             ; Get the next LED offset value.
+000119   04a2     iorwf	0x22, f                              IORWF    TEMP1, F             ; The beep note is a combination of each LED offset.
+00011a   3e39     addlw	0x39                                 ADDLW    LED_SEQ_ROT_CLOCK    ; Convert LED offset to an LED IO value.
+00011b   21f1     call	0x1f1                                 CALL     READ_EEPROM          ; Look up selected level LED value.
+00011c   04b1     iorwf	0x31, f                              IORWF    LED_STATE, F         ; Add the defined LED to the displayed LEDs.
+00011d   0ca5     rrf	0x25, f                                RRF      TEMP4                ; Move to the next LED offset definition,
+00011e   0ca5     rrf	0x25, f                                RRF      TEMP4                ; the next two bits of the current sequence value.
+00011f   0ba3     decfsz	0x23, f                             DECFSZ   TEMP2                ; Display upto the maximum LEDs for selected simultaneous level.
+000120   2917     goto	0x117                                 GOTO     SEQ_PLAY_LOOP
+000121   0822     movf	0x22, w                               MOVFW    TEMP1                ; Use the beep note as an offset into the beep frequency table.
+000122   3e0a     addlw	0xa                                  ADDLW    0x0A                 ; Make beep a higher frequency.
+000123   3810     iorlw	0x10                                 IORLW    0x10                 ; Set beep period to short.
+000124   21a6     call	0x1a6                                 CALL     START_BEEP           ; Start playing the beep.
+000125   3008     movlw	0x8                                  MOVLW    PAUSE_SHORT          ; Display the current LED sequence for a period of time.
+000126   2194     call	0x194                                 CALL     PAUSE
+000127   3030     movlw	0x30                                 MOVLW    SLEEP_TIMEOUT        ; Reset inactive count, to keep awake during the sequence play.
+000128   00a9     movwf	0x29                                 MOVWF    SLEEP_TIMEOUT_COUNT
+000129   0aa4     incf	0x24, f                               INCF     TEMP3                ; Point to next value in sequence.
+00012a   0824     movf	0x24, w                               MOVFW    TEMP3                ; Loop until end of sequence.
+00012b   063d     xorwf	0x3d, w                              XORWF    SEQ_COUNT, W
+00012c   1d03     btfss	0x3, 0x2                             BTFSS    STATUS, Z
+00012d   290a     goto	0x10a                                 GOTO     SEQ_PLAY_NEXT
+00012e   01b1     clrf	0x31                                  CLRF     LED_STATE            ; Clear LED display after playing the current full LED sequence.
+00012f   0008     return                                     RETURN
+                                           
+                                           
+                                           
+                                           ;/*************************************************************************/
+                                           ;/* Itterate though the current sequence of LED patterns. Accept a player */
+                                           ;/* interation for each sequence. Compare the player interation with the  */
+                                           ;/* correct sequence value, the player loses if they get any sequence     */
+                                           ;/* wrong.                                                                */
+                                           ;/*************************************************************************/
+000130   01a4     clrf	0x24                SEQUENCE_REPEAT   CLRF     TEMP3                ; Reset sequence pointer.
+000131   3010     movlw	0x10               SEQ_REPEAT_NEXT   MOVLW    PLAYER_TIMEOUT       ; Reset player turn timeout.
+000132   00aa     movwf	0x2a                                 MOVWF    PLAYER_TIMEOUT_COUNT
+000133   3030     movlw	0x30                                 MOVLW    SLEEP_TIMEOUT        ; Reset inactive count, to keep awake during the sequence play.
+000134   00a9     movwf	0x29                                 MOVWF    SLEEP_TIMEOUT_COUNT
+000135   01b2     clrf	0x32                                  CLRF     LED_COMPARE          ; Construct the current LED sequence value to compare against the player.
+000136   3040     movlw	0x40                                 MOVLW    SEQUENCE             ; Get next sequence value.
+000137   0724     addwf	0x24, w                              ADDWF    TEMP3, W
+000138   0084     movwf	0x4                                  MOVWF    FSR
+000139   0800     movf	0, w                                  MOVFW    INDF                 ; Read the current sequence value from memory.
+00013a   00a5     movwf	0x25                                 MOVWF    TEMP4                ; Store current sequence value for manipulation.
+00013b   0836     movf	0x36, w                               MOVFW    SIMULTANEOUS         ; Get maximum number of simultaneous LEDs to light.
+00013c   00a3     movwf	0x23                                 MOVWF    TEMP2                ; Store simultaneous count for a loop counter.
+00013d   0aa3     incf	0x23, f                               INCF     TEMP2                ; Convert from zero offset to minimum value of one.
+00013e   01a2     clrf	0x22                                  CLRF     TEMP1                ; Construct a beep note from the LED pattern into TEMP1.
+00013f   3003     movlw	0x3                SEQ_REPEAT_LOOP   MOVLW    b'00000011'          ; An LED offset definition is in each two bits of the sequence value.
+000140   0525     andwf	0x25, w                              ANDWF    TEMP4, W             ; Get the next LED offset value.
+000141   04a2     iorwf	0x22, f                              IORWF    TEMP1, F             ; The beep note is a combination of each LED offset.
+000142   3e39     addlw	0x39                                 ADDLW    LED_SEQ_ROT_CLOCK    ; Convert LED offset to an LED IO value.
+000143   21f1     call	0x1f1                                 CALL     READ_EEPROM          ; Look up selected level LED value.
+000144   04b2     iorwf	0x32, f                              IORWF    LED_COMPARE, F       ; Construct the current LED sequence value to compare against the player.
+000145   0ca5     rrf	0x25, f                                RRF      TEMP4                ; Move to the next LED offset definition.
+000146   0ca5     rrf	0x25, f                                RRF      TEMP4
+000147   0ba3     decfsz	0x23, f                             DECFSZ   TEMP2                ; Display upto the maximum LEDs for selected simultaneous level.
+000148   293f     goto	0x13f                                 GOTO     SEQ_REPEAT_LOOP
+                                           
+000149   01b4     clrf	0x34                                  CLRF     KEY_LOG              ; During player turn. Log key presses while any key is held down.
+00014a   216b     call	0x16b                                 CALL     WAIT_KEY_DOWN        ; Wait for the first key to be pressed.
+00014b   2173     call	0x173                                 CALL     WAIT_KEY_UP          ; Wait for all keys to be released, the key log is the players turn.
+                                           
+00014c   0834     movf	0x34, w                               MOVFW    KEY_LOG              ; If key press does not compare to LED sequence, force lose.
+00014d   3935     andlw	0x35                                 ANDLW    (1 << SW_LED_1)|(1 << SW_LED_2)|(1 << SW_LED_3)|(1 << SW_LED_4)
+00014e   0632     xorwf	0x32, w                              XORWF    LED_COMPARE, W
+00014f   1d03     btfss	0x3, 0x2                             BTFSS    STATUS, Z
+000150   01aa     clrf	0x2a                                  CLRF     PLAYER_TIMEOUT_COUNT ; Force a player time out, to force a lose if compare fails.
+                                           
+000151   08aa     movf	0x2a, f                               MOVF     PLAYER_TIMEOUT_COUNT, F ; Test for any player time out and end player turn on a time out.
+000152   1903     btfsc	0x3, 0x2                             BTFSC    STATUS, Z
+000153   2959     goto	0x159                                 GOTO     SEQ_REPEAT_END
+                                           
+000154   0aa4     incf	0x24, f                               INCF     TEMP3                ; Point to next value in sequence.
+000155   0824     movf	0x24, w                               MOVFW    TEMP3                ; Loop until end of sequence.
+000156   063d     xorwf	0x3d, w                              XORWF    SEQ_COUNT, W
+000157   1d03     btfss	0x3, 0x2                             BTFSS    STATUS, Z
+000158   2931     goto	0x131                                 GOTO     SEQ_REPEAT_NEXT
+000159   0008     return                   SEQ_REPEAT_END    RETURN
+                                           
+                                           
+                                           
+                                           ;/**************************************************/
+                                           ;/* Read the current state of all of the switches. */
+                                           ;/*                                                */
+                                           ;/* RETURNS:                                       */
+                                           ;/* KEY_PRESS - The current state of the switches. */
+                                           ;/**************************************************/
+00015a   18b0     btfsc	0x30, 0x1          READ_KEYS         BTFSC    APP_FLAGS, F_PAUSED  ; Don't read keys if the application is paused.
+00015b   296a     goto	0x16a                                 GOTO     NO_READ_KEYS
+00015c   3035     movlw	0x35                                 MOVLW    (1 << SW_LED_1)|(1 << SW_LED_2)|(1 << SW_LED_3)|(1 << SW_LED_4)
+00015d   0485     iorwf	0x5, f                               IORWF    GPIO, F              ; Ensure GPIO register is clear.
+00015e   1683     bsf	0x3, 0x5                               BSF      STATUS, RP0          ; Select Register bank 1
+00015f   0485     iorwf	0x5, f                               IORWF    TRISIO               ; Set all switch GPIO to read.
+000160   0095     movwf	0x15                                 MOVWF    WPU                  ; Weak pull up on all switches.
+000161   1283     bcf	0x3, 0x5                               BCF      STATUS, RP0          ; Select Register bank 0
+000162   0805     movf	0x5, w                                MOVFW    GPIO                 ; Read current switch states, mask out non switch IO.
+000163   3aff     xorlw	0xff                                 XORLW    0xFF                 ; Invert the state so key presses are detected as 1.
+000164   3935     andlw	0x35                                 ANDLW    (1 << SW_LED_1)|(1 << SW_LED_2)|(1 << SW_LED_3)|(1 << SW_LED_4)
+000165   04b3     iorwf	0x33, f                              IORWF    KEY_PRESS, F         ; Add current switch states to currently stored values.
+000166   1903     btfsc	0x3, 0x2                             BTFSC    STATUS, Z            ; Check if a key is pressed.
+000167   296a     goto	0x16a                                 GOTO     NO_READ_KEYS
+000168   3030     movlw	0x30                                 MOVLW    SLEEP_TIMEOUT        ; When key pressed, reset inactive count to prevent sleep.
+000169   00a9     movwf	0x29                                 MOVWF    SLEEP_TIMEOUT_COUNT
+00016a   0008     return                   NO_READ_KEYS      RETURN
+                                           
+                                           
+                                           
+                                           ;/*******************************************************************/
+                                           ;/* Wait for a key to be pressed and then return from subroutine.   */
+                                           ;/* used to pause application while waiting for player interaction. */
+                                           ;/*******************************************************************/
+00016b   01b3     clrf	0x33                WAIT_KEY_DOWN     CLRF     KEY_PRESS            ; Ensure no previous key reads effect the routine.
+00016c   08aa     movf	0x2a, f             WAIT_KEYD_LOOP    MOVF     PLAYER_TIMEOUT_COUNT, F ; If player turn times out while waiting, return from
+00016d   1903     btfsc	0x3, 0x2                             BTFSC    STATUS, Z            ; subroutine, so game can be flagged as player losing.
+00016e   2972     goto	0x172                                 GOTO     WAIT_KEYD_END
+00016f   08b3     movf	0x33, f                               MOVF     KEY_PRESS, F         ; Get the current keys read during application interupts.
+000170   1903     btfsc	0x3, 0x2                             BTFSC    STATUS, Z
+000171   296c     goto	0x16c                                 GOTO     WAIT_KEYD_LOOP       ; Loop until a key has been pressed.
+000172   0008     return                   WAIT_KEYD_END     RETURN
+                                           
+                                           
+                                           
+                                           ;/**********************************************************************/
+                                           ;/* Wait for all keys to be released and then return from subroutine.  */
+                                           ;/* Log the keys pressed during subroutine, and from before called.    */
+                                           ;/* Play a note associated with the keys being pressed during routine. */
+                                           ;/**********************************************************************/
+000173   0833     movf	0x33, w             WAIT_KEY_UP       MOVFW    KEY_PRESS            ; Log current keys being pressed.
+000174   04b4     iorwf	0x34, f                              IORWF    KEY_LOG
+000175   01b3     clrf	0x33                                  CLRF     KEY_PRESS            ; Clear the key press flags to check for all keys released.
+000176   08b6     movf	0x36, f                               MOVF     SIMULTANEOUS, F      ; Play key beep here if only one simultainious LED.
+000177   1903     btfsc	0x3, 0x2                             BTFSC    STATUS, Z
+000178   297b     goto	0x17b                                 GOTO     KEY_UP_BEEP
+000179   0822     movf	0x22, w                               MOVFW    TEMP1                ; Play key beep appropreate for many simultainious LEDs.
+00017a   2982     goto	0x182                                 GOTO     KEY_UP_NO_BEEP
+00017b   3000     movlw	0                  KEY_UP_BEEP       MOVLW    0x00                 ; Beep made from merging the two bit key values together.
+00017c   1934     btfsc	0x34, 0x2                            BTFSC    KEY_LOG, SW_LED_2
+00017d   3801     iorlw	0x1                                  IORLW    0x01
+00017e   1834     btfsc	0x34, 0                              BTFSC    KEY_LOG, SW_LED_3
+00017f   3802     iorlw	0x2                                  IORLW    0x02
+000180   1a34     btfsc	0x34, 0x4                            BTFSC    KEY_LOG, SW_LED_4
+000181   3803     iorlw	0x3                                  IORLW    0x03
+000182   3e0a     addlw	0xa                KEY_UP_NO_BEEP    ADDLW    0x0A                 ; Make beep a higher frequency.
+000183   3810     iorlw	0x10                                 IORLW    0x10                 ; Set beep period to short.
+000184   21a6     call	0x1a6                                 CALL     START_BEEP           ; Start playing beep.
+000185   08aa     movf	0x2a, f                               MOVF     PLAYER_TIMEOUT_COUNT, F ; Check for player time out, exit subrouting on time out.
+000186   1903     btfsc	0x3, 0x2                             BTFSC    STATUS, Z
+000187   298c     goto	0x18c                                 GOTO     WAIT_KEYU_END
+000188   215a     call	0x15a                                 CALL     READ_KEYS            ; Force read of the current keys from the GPIO port.
+000189   08b3     movf	0x33, f                               MOVF     KEY_PRESS, F         ; Check for no keys being pressed.
+00018a   1d03     btfss	0x3, 0x2                             BTFSS    STATUS, Z            ; Exit subrouting when no keys pressed.
+00018b   2973     goto	0x173                                 GOTO     WAIT_KEY_UP          ; Loop until no keys are pressed.
+00018c   0008     return                   WAIT_KEYU_END     RETURN
+                                           
+                                           
+                                           
+                                           ;/***************************************************************************/
+                                           ;/* Wait for no keys being pressed. A very basic version of the subroutine. */
+                                           ;/* To make sure no accidental key presses are used when they shouldn't be. */
+                                           ;/* GPIO port must be placed into input mode before calling subroutine.     */
+                                           ;/* A call to READ_KEYS will put the GPIO ports into input mode.            */
+                                           ;/***************************************************************************/
+00018d   0805     movf	0x5, w              WAIT_NO_KEYS      MOVFW    GPIO                 ; Read the GPIO port directly.
+00018e   3aff     xorlw	0xff                                 XORLW    0xFF                 ; Invert the GPIO port values.
+00018f   3935     andlw	0x35                                 ANDLW    (1 << SW_LED_1)|(1 << SW_LED_2)|(1 << SW_LED_3)|(1 << SW_LED_4)
+000190   1d03     btfss	0x3, 0x2                             BTFSS    STATUS, Z            ; Test only switch related pins.
+000191   298d     goto	0x18d                                 GOTO     WAIT_NO_KEYS         ; Loop until no keys pressed.
+000192   01b3     clrf	0x33                                  CLRF     KEY_PRESS            ; Clear any key press flags to ensure they are not accidentally used.
+000193   0008     return                                     RETURN
+                                           
+                                           
+                                           
+                                           ;/**********************************************************************/
+                                           ;/* Pause application. The application still runs operations, but key  */
+                                           ;/* presses and pause flagged LED animations are paused.               */
+                                           ;/* Allows application to show user specific LED patterns for a period */
+                                           ;/* of time.                                                           */
+                                           ;/**********************************************************************/
+000194   00a8     movwf	0x28               PAUSE             MOVWF    PAUSE_COUNT
+000195   14b0     bsf	0x30, 0x1                              BSF      APP_FLAGS, F_PAUSED
+000196   18b0     btfsc	0x30, 0x1          PAUSE_WAIT        BTFSC    APP_FLAGS, F_PAUSED
+000197   2996     goto	0x196                                 GOTO     PAUSE_WAIT
+000198   0008     return                                     RETURN
+                                           
+                                           
+                                           
+                                           ;/**********************************************************************/
+                                           ;/* Whan a tune is being played, an interupt will call this routing to */
+                                           ;/* start the next beep playing when the previous beep ends. Or stop   */
+                                           ;/* playing at the end of the tune.                                    */
+                                           ;/**********************************************************************/
+000199   082f     movf	0x2f, w             PLAY_NEXT_BEEP    MOVFW    TUNE_PTR             ; Is tune currently playing?
+00019a   1903     btfsc	0x3, 0x2                             BTFSC    STATUS, Z
+00019b   29a5     goto	0x1a5                                 GOTO     NEXT_BEEP_END
+00019c   19b0     btfsc	0x30, 0x3                            BTFSC    APP_FLAGS, F_SOUND_ACTIVE ; Is beep currently playing?
+00019d   29a5     goto	0x1a5                                 GOTO     NEXT_BEEP_END
+00019e   21f1     call	0x1f1                                 CALL     READ_EEPROM          ; Get the next note to play.
+00019f   1d03     btfss	0x3, 0x2                             BTFSS    STATUS, Z            ; Is note end of tune marker?
+0001a0   29a3     goto	0x1a3                                 GOTO     PLAY_NEXT_NOTE
+0001a1   01af     clrf	0x2f                                  CLRF     TUNE_PTR             ; Switch off tune at end of tune.
+0001a2   29a5     goto	0x1a5                                 GOTO     NEXT_BEEP_END
+0001a3   21a6     call	0x1a6               PLAY_NEXT_NOTE    CALL     START_BEEP           ; Start playing next beep.
+0001a4   0aaf     incf	0x2f, f                               INCF     TUNE_PTR             ; Point to next note to play.
+0001a5   0008     return                   NEXT_BEEP_END     RETURN
+                                           
+                                           
+                                           
+                                           ;/*************************************************************************/
+                                           ;/* Start playing a beep note for a given duration.                       */
+                                           ;/*                                                                       */
+                                           ;/* CALL WITH:                                                            */
+                                           ;/* W - High nibble - Duration of beep.                                   */
+                                           ;/* W - Low nibble - Offset to beep frequency in frequency look up table. */
+                                           ;/*************************************************************************/
+0001a6   1d30     btfss	0x30, 0x2          START_BEEP        BTFSS    APP_FLAGS, F_SOUND_ON ; Check if sound is enabled.
+0001a7   29b9     goto	0x1b9                                 GOTO     NO_SOUND
+0001a8   19b0     btfsc	0x30, 0x3                            BTFSC    APP_FLAGS, F_SOUND_ACTIVE ; Is beep currently playing?
+0001a9   29b9     goto	0x1b9                                 GOTO     NO_SOUND
+0001aa   00ad     movwf	0x2d                                 MOVWF    BEEP_LEN_L           ; Use W low nibble as the frequency of the beep.
+0001ab   00ae     movwf	0x2e                                 MOVWF    BEEP_LEN_H           ; Use W high nibble as the length of the beep.
+0001ac   0eae     swapf	0x2e, f                              SWAPF    BEEP_LEN_H           ; Move high nibble to low nibble, beep length.
+0001ad   300f     movlw	0xf                                  MOVLW    0x0F                 ; Mask for lower nibble only.
+0001ae   05ae     andwf	0x2e, f                              ANDWF    BEEP_LEN_H, F        ; Beep length is only lower nibble.
+0001af   05ad     andwf	0x2d, f                              ANDWF    BEEP_LEN_L, F        ; Use lower nibble of W to lookup frequencey of beep.
+0001b0   3000     movlw	0                                    MOVLW    FREQ_LOOKUP
+0001b1   072d     addwf	0x2d, w                              ADDWF    BEEP_LEN_L, W        ; Calculate lookup EEPROM address.
+0001b2   21f1     call	0x1f1                                 CALL     READ_EEPROM          ; Get beep frequency period for timer 1.
+0001b3   00ac     movwf	0x2c                                 MOVWF    BEEP_FREQ_H          ; Set timer periods for beep.
+0001b4   008f     movwf	0xf                                  MOVWF    TMR1H
+0001b5   01ab     clrf	0x2b                                  CLRF     BEEP_FREQ_L
+0001b6   018e     clrf	0xe                                   CLRF     TMR1L
+0001b7   01ad     clrf	0x2d                                  CLRF     BEEP_LEN_L
+0001b8   15b0     bsf	0x30, 0x3                              BSF      APP_FLAGS, F_SOUND_ACTIVE ; Start beep by switching on timer 1.
+0001b9   0008     return                   NO_SOUND          RETURN
+                                           
+                                           
+                                           
+                                           ;/***************************************************************************/
+                                           ;/* Generate a new random value and place in the next random value RAM      */
+                                           ;/* location. Call when the player presses any key to allow timer values to */
+                                           ;/* be random.                                                              */
+                                           ;/***************************************************************************/
+0001ba   3050     movlw	0x50               MAKE_RAND         MOVLW    RAND                 ; Get the address for random values.
+0001bb   073f     addwf	0x3f, w                              ADDWF    RAND_MAKE_COUNT, W   ; Add the offset to the position to add new values.
+0001bc   0084     movwf	0x4                                  MOVWF    FSR                  ; Use indirect addressing to access the data.
+0001bd   0e80     swapf	0, f                                 SWAPF    INDF                 ; Shuffle the previous random value.
+0001be   0801     movf	0x1, w                                MOVFW    TMR0                 ; Use the timer 0 value as the source for a new random value.
+0001bf   060e     xorwf	0xe, w                               XORWF    TMR1L, W             ; Use logical exclusive or to add timer 1 values.
+0001c0   060f     xorwf	0xf, w                               XORWF    TMR1H, W
+0001c1   0680     xorwf	0, f                                 XORWF    INDF, F              ; Use logical exclusive or to randomize the last RAM value.
+0001c2   0abf     incf	0x3f, f                               INCF     RAND_MAKE_COUNT      ; Point to the next address.
+0001c3   300f     movlw	0xf                                  MOVLW    MAX_RAND_COUNT       ; Check if the maximum address for data has been reached. 
+0001c4   063f     xorwf	0x3f, w                              XORWF    RAND_MAKE_COUNT, W
+0001c5   1903     btfsc	0x3, 0x2                             BTFSC    STATUS, Z
+0001c6   01bf     clrf	0x3f                                  CLRF     RAND_MAKE_COUNT      ; Point back to the start of data when the max address is reached.
+0001c7   0008     return                   NO_MAKE_RAND      RETURN
+                                           
+                                           
+                                           
+                                           ;/**********************************************************/
+                                           ;/* Get the next random value from the random value cache. */
+                                           ;/*                                                        */
+                                           ;/* RETURNS:                                               */
+                                           ;/* W - Random value.                                      */
+                                           ;/**********************************************************/
+0001c8   0abe     incf	0x3e, f             GET_RAND          INCF     RAND_GET_COUNT       ; Point to the next random value.
+0001c9   300f     movlw	0xf                                  MOVLW    MAX_RAND_COUNT       ; Check if the maximum address for data has been reached. 
+0001ca   063e     xorwf	0x3e, w                              XORWF    RAND_GET_COUNT, W
+0001cb   1903     btfsc	0x3, 0x2                             BTFSC    STATUS, Z
+0001cc   01be     clrf	0x3e                                  CLRF     RAND_GET_COUNT       ; Point back to the start of data when the max address is reached.
+0001cd   3050     movlw	0x50                                 MOVLW    RAND                 ; Get the address for random values.
+0001ce   073e     addwf	0x3e, w                              ADDWF    RAND_GET_COUNT, W    ; Add the offset to the position to get next value.
+0001cf   0084     movwf	0x4                                  MOVWF    FSR                  ; Use indirect addressing to access the data.
+0001d0   0800     movf	0, w                                  MOVFW    INDF                 ; Get the next random value.
+0001d1   0008     return                                     RETURN
+                                           
+                                           
+                                           
+                                           ;/****************************************************************************/
+                                           ;/* Update the LED display, at the GPIO pins of the device. The output of    */
+                                           ;/* the actual GPIO outputs is always 0 for all pins. The LEDs are switched  */
+                                           ;/* by changing the port direction of each pin. This is done for power       */
+                                           ;/* saving reasons. The LEDs are held constantly high on one side, the other */
+                                           ;/* side is pulled low by making the pin an output to switch an LED on.      */
+                                           ;/* The LEDs are switched off by making the pin an input (high impedence).   */
+                                           ;/* This saves power, as when the LED is on - pin pulled low. Pressing a     */
+                                           ;/* switch has little effect as this also switches the LED on. But when the  */
+                                           ;/* LED is off, the pin is high impedence, so pressing a swtich just         */
+                                           ;/* switches the LED on. If the GPIO pin where held high to switch off the   */
+                                           ;/* LED, pressing a swtich would not only switch on the LED, but also pull   */
+                                           ;/* current from the output of the GPIO pin, and waste battery power.        */
+                                           ;/*                                                                          */
+                                           ;/* CALL WITH:                                                               */
+                                           ;/* LED_STATE - The state of the TRISIO register.                            */
+                                           ;/****************************************************************************/
+0001d2   0831     movf	0x31, w             LED_DISPLAY       MOVFW    LED_STATE            ; Get the current LED state to display.
+0001d3   3aff     xorlw	0xff                                 XORLW    0xFF                 ; Invert the state so TRISIO method lights LEDs correctly.
+0001d4   3935     andlw	0x35                                 ANDLW    (1 << SW_LED_1)|(1 << SW_LED_2)|(1 << SW_LED_3)|(1 << SW_LED_4)
+0001d5   1683     bsf	0x3, 0x5                               BSF      STATUS, RP0          ; Select Register bank 1
+0001d6   0085     movwf	0x5                                  MOVWF    TRISIO
+0001d7   1283     bcf	0x3, 0x5                               BCF      STATUS, RP0          ; Select Register bank 0
+0001d8   30ca     movlw	0xca                                 MOVLW    ~((1 << SW_LED_1)|(1 << SW_LED_2)|(1 << SW_LED_3)|(1 << SW_LED_4))
+0001d9   0585     andwf	0x5, f                               ANDWF    GPIO, F              ; Ensure GPIO register is clear for all LEDs.
+0001da   0008     return                                     RETURN
+                                           
+                                           
+                                           
+                                           ;/***************************************/
+                                           ;/* Start a new LED animation sequence. */
+                                           ;/*                                     */
+                                           ;/* CALL WITH:                          */
+                                           ;/* W - Address of new LED animation.   */
+                                           ;/***************************************/
+0001db   01ba     clrf	0x3a                SET_LED_ANIM      CLRF     LED_SEQ_COUNT        ; Initialise the LED animation sequence.
+0001dc   00b9     movwf	0x39                                 MOVWF    LED_SEQ_ADR
+0001dd   01b1     clrf	0x31                                  CLRF     LED_STATE            ; Don't light any LEDs at start of LED animation.
+0001de   21d2     call	0x1d2                                 CALL     LED_DISPLAY          ; Update LEDs.
+0001df   0008     return                                     RETURN
+                                           
+                                           
+                                           
+                                           ;/*******************************************/
+                                           ;/* Animate to next LED animation sequence. */
+                                           ;/*******************************************/
+0001e0   1cb0     btfss	0x30, 0x1          NEXT_LED_ANIM_SEQ BTFSS    APP_FLAGS, F_PAUSED  ; Check if application is paused.
+0001e1   29e4     goto	0x1e4                                 GOTO     SEQ_NO_PAUSE
+0001e2   1bb1     btfsc	0x31, 0x7                            BTFSC    LED_STATE, F_LED_SEQ_PAUSE ; Don't change LED sequence if flagged to pause with application.
+0001e3   29f0     goto	0x1f0                                 GOTO     END_EEPROM_SEQ
+0001e4   0839     movf	0x39, w             SEQ_NO_PAUSE      MOVFW    LED_SEQ_ADR          ; Get the address for the current animation sequence.
+0001e5   073a     addwf	0x3a, w                              ADDWF    LED_SEQ_COUNT, W     ; Add the offset to the position to get next value.
+0001e6   0aba     incf	0x3a, f                               INCF     LED_SEQ_COUNT        ; Point to the next address.
+0001e7   21f1     call	0x1f1                                 CALL     READ_EEPROM          ; Read the next animation value.
+0001e8   3aff     xorlw	0xff                                 XORLW    0xFF                 ; Check for end of animation.
+0001e9   1d03     btfss	0x3, 0x2                             BTFSS    STATUS, Z            ; A value of 0xFF, is the end of sequence.
+0001ea   29ee     goto	0x1ee                                 GOTO     SET_EEPROM_SEQ
+0001eb   01ba     clrf	0x3a                                  CLRF     LED_SEQ_COUNT        ; Point to the start of sequence when at end.
+0001ec   21e0     call	0x1e0                                 CALL     NEXT_LED_ANIM_SEQ    ; Get the start animation value, by recursion.
+0001ed   3aff     xorlw	0xff                                 XORLW    0xFF                 ; Adjust for recursion.
+0001ee   3aff     xorlw	0xff               SET_EEPROM_SEQ    XORLW    0xFF                 ; Undo end of sequence check effect on W.
+0001ef   00b1     movwf	0x31                                 MOVWF    LED_STATE            ; Update LEDs.
+0001f0   0008     return                   END_EEPROM_SEQ    RETURN
+                                           
+                                           
+                                           
+                                           ;/****************************************/
+                                           ;/* Read a value from an EEPROM address. */
+                                           ;/*                                      */
+                                           ;/* CALL WITH:                           */
+                                           ;/* W - EEPROM address.                  */
+                                           ;/*                                      */
+                                           ;/* RETURNS WITH:                        */
+                                           ;/* W - EEPROM value read.               */
+                                           ;/****************************************/
+0001f1   1683     bsf	0x3, 0x5             READ_EEPROM       BSF      STATUS, RP0          ; Select Register bank 1
+0001f2   009b     movwf	0x1b                                 MOVWF    EEADR                ; Point to the address in EEPROM.
+0001f3   141c     bsf	0x1c, 0                                BSF      EECON1, RD           ; Read from EEPROM.
+0001f4   081a     movf	0x1a, w                               MOVFW    EEDATA               ; Read the value from EEPROM.
+0001f5   1283     bcf	0x3, 0x5                               BCF      STATUS, RP0          ; Select Register bank 0
+0001f6   0008     return                                     RETURN
+                                           
+                                           
+                                           
+                                           ;/*****************************/
+                                           ;/* Reset a RAM area to 0x00. */
+                                           ;/*                           */
+                                           ;/* CALL WITH:                */
+                                           ;/* FSR - Start RAM address.  */
+                                           ;/* W   - Byte clear count.   */
+                                           ;/*****************************/
+0001f7   0180     clrf	0                   CLEAR_RAM         CLRF     INDF                 ; Clear RAM address.
+0001f8   0a84     incf	0x4, f                                INCF     FSR                  ; Point to next RAM address,
+0001f9   3eff     addlw	0xff                                 ADDLW    0xFF                 ; Subtract 1 from loop count.
+0001fa   1d03     btfss	0x3, 0x2                             BTFSS    STATUS, Z
+0001fb   29f7     goto	0x1f7                                 GOTO     CLEAR_RAM            ; Loop until all RAM addresses cleared.
+0001fc   0008     return                                     RETURN
+                                           
+                                           
+                                           
+                                                             ORG      0x2100               ; EEPROM Area.
+                                           
+002100   0000     nop                      FREQ_LOOKUP       DE       0x00                 ; Silent beep definition.
+002101   00f1     movwf	0x71                                 DE       0xF1                 ; Frequency period for note 1
+002102   00f2     movwf	0x72                                 DE       0xF2                 ; Frequency period for note 2
+002103   00f3     movwf	0x73                                 DE       0xF3                 ; Frequency period for note 3
+002104   00f4     movwf	0x74                                 DE       0xF4                 ; Frequency period for note 4
+002105   00f5     movwf	0x75                                 DE       0xF5                 ; Frequency period for note 5
+002106   00f6     movwf	0x76                                 DE       0xF6                 ; Frequency period for note 6
+002107   00f7     movwf	0x77                                 DE       0xF7                 ; Frequency period for note 7
+002108   00f8     movwf	0x78                                 DE       0xF8                 ; Frequency period for note 8
+002109   00f9     movwf	0x79                                 DE       0xF9                 ; Frequency period for note 9
+00210a   00fa     movwf	0x7a                                 DE       0xFA                 ; Frequency period for note A
+00210b   00fb     movwf	0x7b                                 DE       0xFB                 ; Frequency period for note B
+00210c   00fc     movwf	0x7c                                 DE       0xFC                 ; Frequency period for note C
+00210d   00fd     movwf	0x7d                                 DE       0xFD                 ; Frequency period for note D
+00210e   00fe     movwf	0x7e                                 DE       0xFE                 ; Frequency period for note E
+00210f   00ff     movwf	0x7f                                 DE       0xFF                 ; Frequency period for note F
+                                           
+002110   2114     call	0x114               TUNE_LEVEL_LOOKUP DE       TUNE_LEVEL_ONE
+002111   2116     call	0x116                                 DE       TUNE_LEVEL_TWO
+002112   211a     call	0x11a                                 DE       TUNE_LEVEL_THREE
+002113   2120     call	0x120                                 DE       TUNE_LEVEL_FOUR
+                                           
+002114   001f     dw	0x1f  ;unknown opcode TUNE_LEVEL_ONE    DE       1F, 00
+002115   0000     nop                      
+                                           
+002116   001f     dw	0x1f  ;unknown opcode TUNE_LEVEL_TWO    DE       1F, 10, 1F, 00
+002117   0010     dw	0x10  ;unknown opcode 
+002118   001f     dw	0x1f  ;unknown opcode 
+002119   0000     nop                      
+                                           
+00211a   001f     dw	0x1f  ;unknown opcode TUNE_LEVEL_THREE  DE       1F, 10, 1F, 10, 1F, 00
+00211b   0010     dw	0x10  ;unknown opcode 
+00211c   001f     dw	0x1f  ;unknown opcode 
+00211d   0010     dw	0x10  ;unknown opcode 
+00211e   001f     dw	0x1f  ;unknown opcode 
+00211f   0000     nop                      
+                                           
+002120   001f     dw	0x1f  ;unknown opcode TUNE_LEVEL_FOUR   DE       1F, 10, 1F, 10, 1F, 10, 1F, 00
+002121   0010     dw	0x10  ;unknown opcode 
+002122   001f     dw	0x1f  ;unknown opcode 
+002123   0010     dw	0x10  ;unknown opcode 
+002124   001f     dw	0x1f  ;unknown opcode 
+002125   0010     dw	0x10  ;unknown opcode 
+002126   001f     dw	0x1f  ;unknown opcode 
+002127   0000     nop                      
+                                           
+002128   001e     dw	0x1e  ;unknown opcode TUNE_SOUND_ON     DE       1E, 10, 1F, 00
+002129   0010     dw	0x10  ;unknown opcode 
+00212a   001f     dw	0x1f  ;unknown opcode 
+00212b   0000     nop                      
+                                           
+00212c   004e     dw	0x4e  ;unknown opcode TUNE_WIN          DE       4E, 4F, 4E, 4F, 4E, 4F, 00
+00212d   004f     dw	0x4f  ;unknown opcode 
+00212e   004e     dw	0x4e  ;unknown opcode 
+00212f   004f     dw	0x4f  ;unknown opcode 
+002130   004e     dw	0x4e  ;unknown opcode 
+002131   004f     dw	0x4f  ;unknown opcode 
+002132   0000     nop                      
+                                           
+002133   0035     dw	0x35  ;unknown opcode TUNE_LOSE         DE       35, 10, 31, 00
+002134   0010     dw	0x10  ;unknown opcode 
+002135   0031     dw	0x31  ;unknown opcode 
+002136   0000     nop                      
+                                           
+002137   0000     nop                      LED_SEQ_NULL      DE       0x00
+002138   00ff     movwf	0x7f                                 DE       0xFF
+                                           
+002139   0020     nop                      LED_SEQ_ROT_CLOCK DE       (1 << SW_LED_1)
+00213a   0004     dw	0x4  ;unknown opcode                    DE       (1 << SW_LED_2)
+00213b   0001     dw	0x1  ;unknown opcode                    DE       (1 << SW_LED_3)
+00213c   0010     dw	0x10  ;unknown opcode                   DE       (1 << SW_LED_4)
+00213d   00ff     movwf	0x7f                                 DE       0xFF
+                                           
+00213e   00a0     movwf	0x20               LED_SEQ_LEVEL     DE       (1 << F_LED_SEQ_PAUSE)|(1 << SW_LED_1)
+00213f   00a4     movwf	0x24                                 DE       (1 << F_LED_SEQ_PAUSE)|(1 << SW_LED_1)|(1 << SW_LED_2)
+002140   00a5     movwf	0x25                                 DE       (1 << F_LED_SEQ_PAUSE)|(1 << SW_LED_1)|(1 << SW_LED_2)|(1 << SW_LED_3)
+002141   00b5     movwf	0x35                                 DE       (1 << F_LED_SEQ_PAUSE)|(1 << SW_LED_1)|(1 << SW_LED_2)|(1 << SW_LED_3)|(1 << SW_LED_4)
+002142   00ff     movwf	0x7f                                 DE       0xFF
+                                           
+002143   0035     dw	0x35  ;unknown opcode LED_SEQ_WIN       DE       (1 << SW_LED_1)|(1 << SW_LED_2)|(1 << SW_LED_3)|(1 << SW_LED_4)
+002144   0000     nop                                        DE       0x00
+002145   00ff     movwf	0x7f                                 DE       0xFF
+                                           
+002146   0021     dw	0x21  ;unknown opcode LED_SEQ_LOSE      DE       (1 << SW_LED_1)|(1 << SW_LED_3)
+002147   0014     dw	0x14  ;unknown opcode                   DE       (1 << SW_LED_2)|(1 << SW_LED_4)
+002148   00ff     movwf	0x7f                                 DE       0xFF
+                                           
+                                           
+                                           
+                                                             END
+                                           
